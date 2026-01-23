@@ -926,22 +926,13 @@
         const STORE_NAME = 'markers';
         const BACKUP_STORE = 'backups';
 
-        // 全收集模板配置（无图版）
+        // 全收集模板配置
         const FULL_COLLECTION_CONFIG = {
             id: 'full_collection',
             name: '全收集',
             isRemote: true,
             remoteUrl: 'https://house-offline.pages.dev/全收集.json',
             cacheKey: 'full_collection_cache'
-        };
-
-        // 全收集模板配置（有图版）
-        const FULL_COLLECTION_WITH_IMAGES_CONFIG = {
-            id: 'full_collection_images',
-            name: '全收集（有图）',
-            isRemote: true,
-            remoteUrl: 'https://house-offline.pages.dev/全收集1.json',
-            cacheKey: 'full_collection_images_cache'
         };
 
         class MapApp {
@@ -1268,8 +1259,6 @@
                 // 检查是否是全收集模板
                 if (lastTplId === FULL_COLLECTION_CONFIG.id) {
                     this.state.currentTemplate = FULL_COLLECTION_CONFIG;
-                } else if (lastTplId === FULL_COLLECTION_WITH_IMAGES_CONFIG.id) {
-                    this.state.currentTemplate = FULL_COLLECTION_WITH_IMAGES_CONFIG;
                 } else {
                     const target = this.state.templates.find(t => t.id === lastTplId) || this.state.templates[0];
                     this.state.currentTemplate = target;
@@ -1284,16 +1273,14 @@
                 ).join('');
                 // 添加全收集模板选项 (特殊标记)
                 const isFullCollection = this.state.currentTemplate.id === FULL_COLLECTION_CONFIG.id;
-                const isFullCollectionImages = this.state.currentTemplate.id === FULL_COLLECTION_WITH_IMAGES_CONFIG.id;
                 html += `<option value="${FULL_COLLECTION_CONFIG.id}" class="bg-yellow-900 text-yellow-300" ${isFullCollection ? 'selected' : ''}>📦 ${FULL_COLLECTION_CONFIG.name}</option>`;
-                html += `<option value="${FULL_COLLECTION_WITH_IMAGES_CONFIG.id}" class="bg-green-900 text-green-300" ${isFullCollectionImages ? 'selected' : ''}>🖼️ ${FULL_COLLECTION_WITH_IMAGES_CONFIG.name}</option>`;
                 this.dom.templateSelect.innerHTML = html;
             }
 
             async switchTemplate(id) {
                 if (id === this.state.currentTemplate.id) return;
 
-                // 处理全收集模板（无图版）
+                // 处理全收集模板
                 if (id === FULL_COLLECTION_CONFIG.id) {
                     this.state.currentTemplate = FULL_COLLECTION_CONFIG;
                     localStorage.setItem('current_template_id', id);
@@ -1303,21 +1290,8 @@
                     this.updateUndoUI();
                     this.updateTemplateSelect();
                     if (this.state.batchMode) this.toggleBatchMode();
-                    await this.loadFullCollectionData(FULL_COLLECTION_CONFIG);
-                    return;
-                }
-
-                // 处理全收集模板（有图版）
-                if (id === FULL_COLLECTION_WITH_IMAGES_CONFIG.id) {
-                    this.state.currentTemplate = FULL_COLLECTION_WITH_IMAGES_CONFIG;
-                    localStorage.setItem('current_template_id', id);
-                    this.state.markers = [];
-                    this.state.batchSelection.clear();
-                    this.state.undoStack = [];
-                    this.updateUndoUI();
-                    this.updateTemplateSelect();
-                    if (this.state.batchMode) this.toggleBatchMode();
-                    await this.loadFullCollectionData(FULL_COLLECTION_WITH_IMAGES_CONFIG);
+                    // 加载全收集数据（带增量同步）
+                    await this.loadFullCollectionData();
                     return;
                 }
 
@@ -1388,6 +1362,9 @@
                         }
                     }
 
+                    // 4. 从 IndexedDB 加载本地图片缓存并合并到全收集数据中
+                    await this.mergeLocalImageCache();
+
                 } catch (error) {
                     console.error('加载全收集数据失败:', error);
                     loadingToast.remove();
@@ -1396,6 +1373,47 @@
                     this.state.fullCollectionSyncing = false;
                     this.refreshFilters();
                     this.renderFilteredContent();
+                }
+            }
+
+            // 从 IndexedDB 加载本地图片缓存，并合并到当前全收集数据中
+            async mergeLocalImageCache() {
+                try {
+                    const tx = this.db.transaction([STORE_NAME], 'readonly');
+                    const store = tx.objectStore(STORE_NAME);
+                    const req = store.getAll();
+
+                    return new Promise((resolve) => {
+                        req.onsuccess = (e) => {
+                            const allLocalData = e.target.result || [];
+                            // 构建 ID -> 本地数据 的映射
+                            const localDataMap = new Map();
+                            allLocalData.forEach(item => {
+                                if (item.images && item.images.length > 0) {
+                                    localDataMap.set(item.id, item);
+                                }
+                            });
+
+                            // 合并图片数据
+                            let mergedCount = 0;
+                            this.state.markers.forEach(marker => {
+                                const localItem = localDataMap.get(marker.id);
+                                if (localItem && localItem.images && localItem.images.length > 0) {
+                                    // 将本地图片合并到全收集数据中
+                                    marker.images = localItem.images;
+                                    mergedCount++;
+                                }
+                            });
+
+                            if (mergedCount > 0) {
+                                console.log(`已从本地缓存合并 ${mergedCount} 个图片`);
+                            }
+                            resolve();
+                        };
+                        req.onerror = () => resolve(); // 失败时静默处理
+                    });
+                } catch (error) {
+                    console.warn('合并本地图片缓存失败:', error);
                 }
             }
 
