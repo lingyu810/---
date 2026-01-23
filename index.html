@@ -538,10 +538,25 @@
 
             <!-- 备份恢复 -->
             <div class="flex gap-2">
-                <button onclick="app.exportData()"
-                    class="bg-gray-800 hover:bg-gray-700 text-xs px-3 py-1.5 rounded border border-gray-600 text-gray-300 transition-colors">
-                    <i class="fa-solid fa-download sm:mr-1"></i><span class="hidden sm:inline">备份</span>
-                </button>
+                <!-- 备份下拉菜单 -->
+                <div class="relative group">
+                    <button
+                        class="bg-gray-800 hover:bg-gray-700 text-xs px-3 py-1.5 rounded border border-gray-600 text-gray-300 transition-colors flex items-center gap-1">
+                        <i class="fa-solid fa-download"></i><span class="hidden sm:inline">备份</span>
+                        <i class="fa-solid fa-caret-down text-[10px] ml-1"></i>
+                    </button>
+                    <div
+                        class="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-600 rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 min-w-[120px]">
+                        <button onclick="app.exportData(true)"
+                            class="block w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white">
+                            <i class="fa-solid fa-image mr-2"></i>完整备份
+                        </button>
+                        <button onclick="app.exportData(false)"
+                            class="block w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-gray-700 hover:text-white border-t border-gray-700">
+                            <i class="fa-regular fa-file mr-2"></i>无图备份
+                        </button>
+                    </div>
+                </div>
                 <button onclick="document.getElementById('file-import').click()"
                     class="bg-gray-800 hover:bg-gray-700 text-xs px-3 py-1.5 rounded border border-gray-600 text-gray-300 transition-colors">
                     <i class="fa-solid fa-upload sm:mr-1"></i><span class="hidden sm:inline">恢复</span>
@@ -911,6 +926,15 @@
         const STORE_NAME = 'markers';
         const BACKUP_STORE = 'backups';
 
+        // 全收集模板配置
+        const FULL_COLLECTION_CONFIG = {
+            id: 'full_collection',
+            name: '全收集',
+            isRemote: true,
+            remoteUrl: 'https://house-offline.pages.dev/全收集.json',
+            cacheKey: 'full_collection_cache'
+        };
+
         class MapApp {
             constructor() {
                 this.state = {
@@ -943,7 +967,11 @@
                     searchDebounceTimer: null,
 
                     // 聚合开关
-                    clusteringEnabled: true
+                    clusteringEnabled: true,
+
+                    // 全收集同步状态
+                    fullCollectionSyncing: false,
+                    lastSyncTime: null
                 };
 
                 this.db = null;
@@ -1020,8 +1048,15 @@
                     if (this.dom.loadingText) this.dom.loadingText.innerText = "正在连接数据库...";
                     await this.initDB();
                     if (this.dom.loadingText) this.dom.loadingText.innerText = "正在加载数据...";
-                    await this.loadLocalData();
-                    await this.checkAndPerformBackup();
+
+                    // 根据当前模板类型加载数据
+                    if (this.state.currentTemplate.id === FULL_COLLECTION_CONFIG.id) {
+                        await this.loadFullCollectionData();
+                    } else {
+                        await this.loadLocalData();
+                        await this.checkAndPerformBackup();
+                    }
+
                     this.renderColorFilters();
                     this.updateUndoUI();
                 } catch (err) {
@@ -1221,20 +1256,45 @@
                     localStorage.setItem('app_templates', JSON.stringify(this.state.templates));
                 }
                 const lastTplId = localStorage.getItem('current_template_id');
-                const target = this.state.templates.find(t => t.id === lastTplId) || this.state.templates[0];
-                this.state.currentTemplate = target;
+                // 检查是否是全收集模板
+                if (lastTplId === FULL_COLLECTION_CONFIG.id) {
+                    this.state.currentTemplate = FULL_COLLECTION_CONFIG;
+                } else {
+                    const target = this.state.templates.find(t => t.id === lastTplId) || this.state.templates[0];
+                    this.state.currentTemplate = target;
+                }
                 this.updateTemplateSelect();
             }
 
             updateTemplateSelect() {
-                // 修复：添加了 class="bg-gray-800 text-white" 确保可见性
-                this.dom.templateSelect.innerHTML = this.state.templates.map(t =>
+                // 普通模板选项
+                let html = this.state.templates.map(t =>
                     `<option value="${t.id}" class="bg-gray-800 text-white" ${t.id === this.state.currentTemplate.id ? 'selected' : ''}>${t.name}</option>`
                 ).join('');
+                // 添加全收集模板选项 (特殊标记)
+                const isFullCollection = this.state.currentTemplate.id === FULL_COLLECTION_CONFIG.id;
+                html += `<option value="${FULL_COLLECTION_CONFIG.id}" class="bg-yellow-900 text-yellow-300" ${isFullCollection ? 'selected' : ''}>📦 ${FULL_COLLECTION_CONFIG.name}</option>`;
+                this.dom.templateSelect.innerHTML = html;
             }
 
             async switchTemplate(id) {
                 if (id === this.state.currentTemplate.id) return;
+
+                // 处理全收集模板
+                if (id === FULL_COLLECTION_CONFIG.id) {
+                    this.state.currentTemplate = FULL_COLLECTION_CONFIG;
+                    localStorage.setItem('current_template_id', id);
+                    this.state.markers = [];
+                    this.state.batchSelection.clear();
+                    this.state.undoStack = [];
+                    this.updateUndoUI();
+                    this.updateTemplateSelect();
+                    if (this.state.batchMode) this.toggleBatchMode();
+                    // 加载全收集数据（带增量同步）
+                    await this.loadFullCollectionData();
+                    return;
+                }
+
                 const t = this.state.templates.find(x => x.id === id);
                 if (!t) return;
                 this.state.currentTemplate = t;
@@ -1243,11 +1303,147 @@
                 this.state.batchSelection.clear();
                 this.state.undoStack = [];
                 this.updateUndoUI();
+                this.updateTemplateSelect();
                 if (this.state.batchMode) this.toggleBatchMode();
                 await this.loadLocalData();
                 this.refreshFilters();
                 this.renderFilteredContent();
                 this.checkAndPerformBackup();
+            }
+
+            // === 全收集数据加载与增量同步 ===
+            async loadFullCollectionData() {
+                const cacheKey = FULL_COLLECTION_CONFIG.cacheKey;
+                const loadingToast = this.showToast('正在同步全收集数据...', 'loading');
+
+                try {
+                    this.state.fullCollectionSyncing = true;
+
+                    // 1. 先加载本地缓存
+                    const cachedData = localStorage.getItem(cacheKey);
+                    let localData = cachedData ? JSON.parse(cachedData) : [];
+
+                    // 2. 尝试从远程或本地获取最新数据
+                    let remoteData = null;
+
+                    // 先尝试远程 Cloudflare
+                    try {
+                        const remoteUrl = FULL_COLLECTION_CONFIG.remoteUrl;
+                        console.log('尝试从远程获取:', remoteUrl);
+                        const response = await fetch(remoteUrl, {
+                            cache: 'no-store',
+                            mode: 'cors'
+                        });
+                        if (response.ok) {
+                            remoteData = await response.json();
+                            console.log('远程获取成功, 数据条数:', remoteData.length);
+                        }
+                    } catch (fetchError) {
+                        console.warn('远程获取失败:', fetchError);
+                    }
+
+                    // 如果远程失败，尝试本地文件
+                    if (!remoteData) {
+                        try {
+                            console.log('尝试从本地文件获取');
+                            const localResponse = await fetch('全收集.json', { cache: 'no-store' });
+                            if (localResponse.ok) {
+                                remoteData = await localResponse.json();
+                                console.log('本地文件获取成功, 数据条数:', remoteData.length);
+                            }
+                        } catch (localError) {
+                            console.warn('本地文件获取失败:', localError);
+                        }
+                    }
+
+                    // 3. 处理数据
+                    if (remoteData && Array.isArray(remoteData)) {
+                        const syncResult = this.syncIncrementalUpdates(remoteData, localData);
+                        this.state.markers = syncResult.mergedData;
+
+                        // 更新本地缓存
+                        localStorage.setItem(cacheKey, JSON.stringify(syncResult.mergedData));
+                        this.state.lastSyncTime = new Date().toISOString();
+
+                        loadingToast.remove();
+                        this.showToast(`加载完成: ${syncResult.mergedData.length} 条数据`, 'success');
+                    } else {
+                        // 无法获取任何数据，使用本地缓存
+                        this.state.markers = localData;
+                        loadingToast.remove();
+                        if (localData.length > 0) {
+                            this.showToast(`使用缓存: ${localData.length} 条数据`, 'info');
+                        } else {
+                            this.showToast('无法获取数据，请检查网络或本地文件', 'error');
+                        }
+                    }
+
+                } catch (error) {
+                    console.error('加载全收集数据失败:', error);
+                    loadingToast.remove();
+                    this.showToast('加载失败: ' + error.message, 'error');
+                } finally {
+                    this.state.fullCollectionSyncing = false;
+                    this.refreshFilters();
+                    this.renderFilteredContent();
+                }
+            }
+
+            // 增量同步算法
+            syncIncrementalUpdates(remoteData, localData) {
+                const localMap = new Map(localData.map(m => [m.id, m]));
+                const mergedData = [];
+                let added = 0, updated = 0;
+
+                for (const remote of remoteData) {
+                    const local = localMap.get(remote.id);
+                    if (!local) {
+                        // 新增项目
+                        mergedData.push(remote);
+                        added++;
+                    } else {
+                        // 检查是否需要更新（比较 updated_at 时间戳，或整体内容hash）
+                        const remoteTime = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+                        const localTime = local.updated_at ? new Date(local.updated_at).getTime() : 0;
+
+                        if (remoteTime > localTime) {
+                            mergedData.push(remote);
+                            updated++;
+                        } else {
+                            mergedData.push(local); // 保留本地版本
+                        }
+                        localMap.delete(remote.id);
+                    }
+                }
+
+                // 注意：远程删除的项目不会保留在本地（以远程为准）
+                return { mergedData, added, updated };
+            }
+
+            // 通用 Toast 提示
+            showToast(message, type = 'info') {
+                const colors = {
+                    loading: 'bg-blue-600',
+                    success: 'bg-green-600',
+                    error: 'bg-red-600',
+                    info: 'bg-gray-700'
+                };
+                const icons = {
+                    loading: '<i class="fa-solid fa-spinner fa-spin mr-2"></i>',
+                    success: '<i class="fa-solid fa-check mr-2"></i>',
+                    error: '<i class="fa-solid fa-exclamation-circle mr-2"></i>',
+                    info: '<i class="fa-solid fa-info-circle mr-2"></i>'
+                };
+
+                const toast = document.createElement('div');
+                toast.className = `fixed top-20 left-1/2 transform -translate-x-1/2 ${colors[type]} text-white px-4 py-2 rounded-lg text-sm z-[200] flex items-center shadow-lg`;
+                toast.innerHTML = `${icons[type]}${message}`;
+                document.body.appendChild(toast);
+
+                if (type !== 'loading') {
+                    setTimeout(() => toast.remove(), 2500);
+                }
+                return toast;
             }
 
             openTemplateManager() {
@@ -1708,14 +1904,23 @@
                 });
             }
 
-            exportData() {
+
+            exportData(withImages = true) {
                 if (this.state.markers.length === 0) return alert('当前模板无数据');
-                const blob = new Blob([JSON.stringify(this.state.markers)], { type: 'application/json' });
+                // 根据参数决定是否包含图片
+                const dataToExport = withImages
+                    ? this.state.markers
+                    : this.state.markers.map(m => {
+                        const { images, ...rest } = m;
+                        return rest;
+                    });
+                const suffix = withImages ? '' : '_无图';
+                const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a'); a.href = url;
-                a.download = `backup_${this.state.currentTemplate.name}_${new Date().toISOString().slice(0, 10)}.json`;
+                a.download = `backup_${this.state.currentTemplate.name}${suffix}_${new Date().toISOString().slice(0, 10)}.json`;
                 document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                URL.revokeObjectURL(url); // 优化: 释放内存
+                URL.revokeObjectURL(url);
             }
 
             initImport(input) {
