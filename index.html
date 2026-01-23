@@ -1323,40 +1323,20 @@
                     const cachedData = localStorage.getItem(cacheKey);
                     let localData = cachedData ? JSON.parse(cachedData) : [];
 
-                    // 2. 尝试从远程或本地获取最新数据
+                    // 2. 尝试从远程获取最新数据
                     let remoteData = null;
-
-                    // 先尝试远程 Cloudflare
                     try {
-                        const remoteUrl = FULL_COLLECTION_CONFIG.remoteUrl;
-                        console.log('尝试从远程获取:', remoteUrl);
-                        const response = await fetch(remoteUrl, {
-                            cache: 'no-store',
-                            mode: 'cors'
+                        const response = await fetch(FULL_COLLECTION_CONFIG.remoteUrl, {
+                            cache: 'no-store'
                         });
                         if (response.ok) {
                             remoteData = await response.json();
-                            console.log('远程获取成功, 数据条数:', remoteData.length);
                         }
                     } catch (fetchError) {
-                        console.warn('远程获取失败:', fetchError);
+                        console.warn('远程获取失败，使用本地缓存:', fetchError);
                     }
 
-                    // 如果远程失败，尝试本地文件
-                    if (!remoteData) {
-                        try {
-                            console.log('尝试从本地文件获取');
-                            const localResponse = await fetch('全收集.json', { cache: 'no-store' });
-                            if (localResponse.ok) {
-                                remoteData = await localResponse.json();
-                                console.log('本地文件获取成功, 数据条数:', remoteData.length);
-                            }
-                        } catch (localError) {
-                            console.warn('本地文件获取失败:', localError);
-                        }
-                    }
-
-                    // 3. 处理数据
+                    // 3. 增量同步
                     if (remoteData && Array.isArray(remoteData)) {
                         const syncResult = this.syncIncrementalUpdates(remoteData, localData);
                         this.state.markers = syncResult.mergedData;
@@ -1366,15 +1346,19 @@
                         this.state.lastSyncTime = new Date().toISOString();
 
                         loadingToast.remove();
-                        this.showToast(`加载完成: ${syncResult.mergedData.length} 条数据`, 'success');
+                        if (syncResult.added > 0 || syncResult.updated > 0) {
+                            this.showToast(`同步完成: 新增 ${syncResult.added}, 更新 ${syncResult.updated}`, 'success');
+                        } else {
+                            this.showToast('数据已是最新', 'success');
+                        }
                     } else {
-                        // 无法获取任何数据，使用本地缓存
+                        // 无法获取远程数据，使用本地缓存
                         this.state.markers = localData;
                         loadingToast.remove();
                         if (localData.length > 0) {
-                            this.showToast(`使用缓存: ${localData.length} 条数据`, 'info');
+                            this.showToast('使用本地缓存数据', 'info');
                         } else {
-                            this.showToast('无法获取数据，请检查网络或本地文件', 'error');
+                            this.showToast('无法获取数据，请检查网络', 'error');
                         }
                     }
 
