@@ -462,34 +462,59 @@
         class="fixed inset-0 bg-[#0f172a] z-[100] flex flex-col justify-center items-center transition-opacity duration-500">
         <i class="fa-solid fa-compass fa-spin text-4xl text-yellow-500 mb-4"></i>
         <p class="text-gray-400 text-sm">正在加载...</p>
-        <p class="text-gray-600 text-xs mt-2" id="loading-text">Glass UI v5.2 (Ultra Modern)</p>
+        <p class="text-gray-600 text-xs mt-2" id="loading-text">房产备忘录v1.0</p>
     </div>
 
-    <!-- Mobile Top Bar (Fixed) - Modern Glass UI -->
     <div id="mobile-top-bar"
-        class="md:hidden fixed top-0 left-0 right-0 h-14 z-40 flex items-center justify-between px-4 transition-transform duration-300"
+        class="md:hidden fixed top-0 left-0 right-0 h-14 z-40 flex items-center justify-between px-3 transition-transform duration-300"
         style="background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255, 255, 255, 0.12); box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);">
-        <button onclick="app.toggleSidebar(true)"
-            class="text-yellow-500 text-lg w-10 h-10 flex items-center justify-center active:scale-95 transition-transform">
-            <i class="fa-solid fa-bars"></i>
-        </button>
-        <div class="font-bold text-gray-200 flex items-center gap-2">
-            <i class="fa-solid fa-map-location-dot text-yellow-500"></i>
-            <span>房产备忘</span>
+        <!-- 左侧：侧边栏开关 + 地图选择 -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <button onclick="app.toggleSidebar(true)"
+                class="text-yellow-500 text-lg w-10 h-10 flex items-center justify-center active:scale-95 transition-transform">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <!-- 地图选择器 -->
+            <select id="mobile-map-select"
+                class="bg-gray-800/80 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500 transition-colors max-w-[72px]">
+                <option value="qinghe">清河</option>
+                <option value="kaifeng">开封</option>
+                <option value="hexi">河西</option>
+                <option value="bujianshan">不见山</option>
+                <option value="hutuo">滹沱</option>
+            </select>
         </div>
-        <div class="flex items-center gap-4 justify-end">
-            <button onclick="app.exportData()" class="text-gray-400 hover:text-white" title="备份">
+
+        <!-- 中间：备份/恢复 -->
+        <div class="flex items-center gap-3">
+            <button onclick="app.showBackupModal()"
+                class="text-gray-400 hover:text-white active:scale-95 transition-transform" title="备份">
                 <i class="fa-solid fa-download"></i>
             </button>
-            <button onclick="document.getElementById('file-import').click()" class="text-gray-400 hover:text-white"
-                title="恢复">
+            <button onclick="document.getElementById('file-import').click()"
+                class="text-gray-400 hover:text-white active:scale-95 transition-transform" title="恢复">
                 <i class="fa-solid fa-upload"></i>
             </button>
-            <button onclick="app.openTemplateManager()" class="text-gray-400 hover:text-white" title="设置">
+        </div>
+
+
+
+        <!-- 右侧：模板选择 + 设置 -->
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <!-- 模板选择器 -->
+            <select id="mobile-template-select"
+                class="bg-gray-800/80 border border-gray-600 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-yellow-500 transition-colors max-w-[80px]"
+                onchange="app.switchTemplate(this.value)">
+                <!-- JS 填充 -->
+            </select>
+            <button onclick="app.openTemplateManager()"
+                class="text-gray-400 hover:text-white active:scale-95 transition-transform" title="模板管理">
                 <i class="fa-solid fa-cog"></i>
             </button>
         </div>
     </div>
+
+
 
     <!-- 感应区 (Top 宽松版) -->
     <div id="trigger-top"></div>
@@ -617,14 +642,22 @@
                 <div class="flex gap-2 text-xs" id="status-filters"></div>
             </div>
 
-            <!-- 颜色筛选 & 聚合开关 -->
+            <!-- 颜色筛选 & 标点折叠程度 -->
             <div class="mb-2 flex-shrink-0">
                 <div class="text-[10px] uppercase text-gray-500 font-bold mb-1.5 flex justify-between items-center">
                     <span>颜色筛选</span>
-                    <button id="cluster-toggle-btn" onclick="app.toggleClustering()"
-                        class="text-[10px] px-2 py-0.5 rounded border border-gray-600 bg-gray-700 text-gray-400 hover:text-yellow-400 hover:border-yellow-500/50 flex items-center gap-1 transition-colors">
-                        <i class="fa-solid fa-layer-group text-[9px]"></i> 聚合
-                    </button>
+                    <div class="flex items-center gap-2">
+                        <button id="cluster-toggle-btn" onclick="app.toggleClustering()"
+                            class="text-[10px] px-2 py-0.5 rounded border border-yellow-500 bg-gray-700 text-yellow-400 hover:text-yellow-400 hover:border-yellow-500/50 flex items-center gap-1 transition-colors">
+                            <i class="fa-solid fa-layer-group text-[9px]"></i> 标点折叠度
+                        </button>
+                        <div id="cluster-slider-container" class="flex items-center gap-1">
+                            <input type="range" id="cluster-grid-slider" min="40" max="160" value="80" step="10"
+                                class="w-16 h-1 accent-yellow-500 cursor-pointer"
+                                oninput="app.updateClusterGridSize(this.value)">
+                            <span id="cluster-grid-value" class="text-[9px] text-yellow-500 w-6">80</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="flex gap-2 items-center flex-wrap" id="color-filters"></div>
             </div>
@@ -833,7 +866,7 @@
                     <button id="star-toggle"
                         class="flex items-center gap-2 px-3 py-1.5 rounded border border-gray-600 text-xs text-gray-400 hover:text-yellow-400 hover:border-yellow-500 transition"
                         onclick="app.toggleStar()">
-                        <i id="star-icon" class="fa-regular fa-star"></i>
+                        <i id="star-icon" class="fa-solid fa-star"></i>
                         <span id="star-text">未收藏</span>
                     </button>
                 </div>
@@ -891,6 +924,27 @@
     <div id="image-view-modal" class="fixed inset-0 bg-black z-[60] hidden flex items-center justify-center"
         onclick="this.classList.add('hidden')">
         <img id="full-image" src="" class="max-w-full max-h-full object-contain">
+    </div>
+
+    <!-- 备份选择弹窗 -->
+    <div id="backup-modal" class="fixed inset-0 bg-black/60 z-[60] hidden flex items-center justify-center"
+        onclick="if(event.target === this) this.classList.add('hidden')">
+        <div class="bg-gray-800 rounded-lg p-4 mx-4 border border-gray-600 shadow-xl max-w-xs w-full">
+            <h3 class="text-white text-sm font-bold mb-3 text-center">选择备份方式</h3>
+            <div class="flex flex-col gap-2">
+                <button onclick="app.exportData(true); document.getElementById('backup-modal').classList.add('hidden');"
+                    class="w-full bg-yellow-600 hover:bg-yellow-500 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-image"></i> 完整备份
+                </button>
+                <button
+                    onclick="app.exportData(false); document.getElementById('backup-modal').classList.add('hidden');"
+                    class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2.5 px-4 rounded text-sm font-medium transition-colors flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-file-lines"></i> 无图备份
+                </button>
+            </div>
+            <button onclick="document.getElementById('backup-modal').classList.add('hidden')"
+                class="w-full mt-3 text-gray-400 hover:text-white text-xs py-1 transition-colors">取消</button>
+        </div>
     </div>
 
     <script>
@@ -966,8 +1020,9 @@
                     // 搜索防抖定时器
                     searchDebounceTimer: null,
 
-                    // 聚合开关
+                    // 聚合开关和折叠程度
                     clusteringEnabled: true,
+                    clusterGridSize: 80,
 
                     // 全收集同步状态
                     fullCollectionSyncing: false,
@@ -1033,6 +1088,20 @@
                     this.switchMap(mapToLoad, false);
                     document.getElementById('map-select').value = mapToLoad;
                     document.getElementById('map-select').addEventListener('change', (e) => this.switchMap(e.target.value));
+
+                    // 移动端地图选择器事件绑定
+                    const mobileMapSelect = document.getElementById('mobile-map-select');
+                    if (mobileMapSelect) {
+                        mobileMapSelect.value = mapToLoad;
+                        mobileMapSelect.addEventListener('change', (e) => this.switchMap(e.target.value));
+                    }
+
+                    // 移动端模板选择器事件绑定 (模板列表由 updateTemplateUI 填充)
+                    const mobileTemplateSelect = document.getElementById('mobile-template-select');
+                    if (mobileTemplateSelect) {
+                        mobileTemplateSelect.addEventListener('change', (e) => this.switchTemplate(e.target.value));
+                    }
+
 
                     // 搜索事件绑定 (带防抖优化)
                     this.dom.searchInput.addEventListener('input', () => {
@@ -1273,9 +1342,16 @@
                 ).join('');
                 // 添加全收集模板选项 (特殊标记)
                 const isFullCollection = this.state.currentTemplate.id === FULL_COLLECTION_CONFIG.id;
-                html += `<option value="${FULL_COLLECTION_CONFIG.id}" class="bg-yellow-900 text-yellow-300" ${isFullCollection ? 'selected' : ''}>📦 ${FULL_COLLECTION_CONFIG.name}</option>`;
+                html += `<option value="${FULL_COLLECTION_CONFIG.id}" class="bg-yellow-900 text-yellow-300" ${isFullCollection ? 'selected' : ''}>${FULL_COLLECTION_CONFIG.name}</option>`;
                 this.dom.templateSelect.innerHTML = html;
+
+                // 同时更新移动端模板选择器
+                const mobileTemplateSelect = document.getElementById('mobile-template-select');
+                if (mobileTemplateSelect) {
+                    mobileTemplateSelect.innerHTML = html;
+                }
             }
+
 
             async switchTemplate(id) {
                 if (id === this.state.currentTemplate.id) return;
@@ -1472,6 +1548,11 @@
                     setTimeout(() => toast.remove(), 2500);
                 }
                 return toast;
+            }
+
+            // 显示备份选择弹窗
+            showBackupModal() {
+                document.getElementById('backup-modal').classList.remove('hidden');
             }
 
             openTemplateManager() {
@@ -2012,7 +2093,13 @@
                 this.refreshFilters();
                 this.renderFilteredContent();
                 if (autoReset) requestAnimationFrame(() => this.resetView());
+
+                // 同步桌面端和移动端地图选择器的值
+                document.getElementById('map-select').value = mapKey;
+                const mobileMapSelect = document.getElementById('mobile-map-select');
+                if (mobileMapSelect) mobileMapSelect.value = mapKey;
             }
+
 
             renderTiles(config) {
                 this.dom.tilesLayer.innerHTML = '';
@@ -2111,14 +2198,28 @@
             // 切换聚合功能开关
             toggleClustering() {
                 this.state.clusteringEnabled = !this.state.clusteringEnabled;
+                this.updateClusteringButtonState();
+                // 移动端：强制按钮失去焦点以清除 sticky hover 状态
+                document.getElementById('cluster-toggle-btn')?.blur();
+                this.renderFilteredContent();
+            }
+
+            // 更新聚合按钮的视觉状态
+            updateClusteringButtonState() {
                 const btn = document.getElementById('cluster-toggle-btn');
+                if (!btn) return;
                 if (this.state.clusteringEnabled) {
-                    btn.classList.add('text-yellow-400', 'border-yellow-500');
-                    btn.classList.remove('text-gray-400', 'border-gray-600');
+                    btn.className = 'text-[10px] px-2 py-0.5 rounded border border-yellow-500 bg-gray-700 text-yellow-400 hover:text-yellow-400 hover:border-yellow-500/50 flex items-center gap-1 transition-colors';
                 } else {
-                    btn.classList.remove('text-yellow-400', 'border-yellow-500');
-                    btn.classList.add('text-gray-400', 'border-gray-600');
+                    btn.className = 'text-[10px] px-2 py-0.5 rounded border border-gray-600 bg-gray-700 text-gray-400 hover:text-gray-300 hover:border-gray-500 flex items-center gap-1 transition-colors';
                 }
+            }
+
+            // 更新聚合格子大小
+            updateClusterGridSize(value) {
+                this.state.clusterGridSize = parseInt(value);
+                const valueDisplay = document.getElementById('cluster-grid-value');
+                if (valueDisplay) valueDisplay.textContent = value;
                 this.renderFilteredContent();
             }
 
@@ -2218,9 +2319,9 @@
                 if (!this.state.clusteringEnabled || scale >= 0.6) {
                     return markers.map(m => ({ ...m, isCluster: false, clusterCount: 1, clusterMarkers: [m] }));
                 }
-
-                // 计算聚合格子大小（屏幕上约80px的距离）
-                const gridSize = 80 / scale;
+                // 计算聚合格子大小（使用用户自定义的折叠程度）
+                const baseGridSize = this.state.clusterGridSize || 80;
+                const gridSize = baseGridSize / scale;
                 const clusters = new Map();
 
                 markers.forEach(m => {
@@ -2462,7 +2563,7 @@
                     const duplicateIcon = isDuplicate ? '<i class="fa-solid fa-circle-exclamation text-red-500 ml-1" title="名称重复"></i>' : '';
 
                     // 新增：星标图标逻辑
-                    const starClass = m.isStarred ? 'fa-solid text-yellow-400' : 'fa-regular text-gray-600 hover:text-yellow-400';
+                    const starClass = m.isStarred ? 'fa-solid text-yellow-400' : 'fa-solid text-gray-600 opacity-30 hover:text-yellow-400 hover:opacity-100';
 
                     const div = document.createElement('div');
                     div.className = `bg-gray-800 p-2.5 rounded cursor-pointer border-l-2 hover:bg-gray-700 transition-colors select-none group ${isOtherMap ? 'opacity-80' : ''} flex items-start gap-2`;
